@@ -1,0 +1,106 @@
+services:
+  web:
+    build:
+      context: ./apps/web
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    volumes:
+      - ./apps/web:/app
+      - web_node_modules:/app/node_modules
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: ./apps/backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://tradelab:tradelab_dev_password@db:5432/tradelab
+      REDIS_URL: redis://redis:6379/0
+      CORS_ORIGINS: http://localhost:5173
+      DEFAULT_EXCHANGE: ${DEFAULT_EXCHANGE:-binance}
+      DEFAULT_MARKET_SYMBOL: ${DEFAULT_MARKET_SYMBOL:-BTC/USDT}
+      MIGRATIONS_DIR: /app/migrations
+      SEC_USER_AGENT: ${SEC_USER_AGENT:-}
+      X_BEARER_TOKEN: ${X_BEARER_TOKEN:-}
+      X_INGESTION_ENABLED: ${X_INGESTION_ENABLED:-false}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      INSTAGRAM_ACCESS_TOKEN: ${INSTAGRAM_ACCESS_TOKEN:-}
+      INSTAGRAM_USER_ID: ${INSTAGRAM_USER_ID:-}
+      INSTAGRAM_GRAPH_API_VERSION: ${INSTAGRAM_GRAPH_API_VERSION:-v24.0}
+      TWELVE_DATA_API_KEY: ${TWELVE_DATA_API_KEY:-}
+    volumes:
+      - ./apps/backend:/app
+      - ./database/migrations:/app/migrations:ro
+      - ./storage:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./apps/backend
+    command: ["python", "-m", "app.connectors.research.ingestion"]
+    environment:
+      DATABASE_URL: postgresql://tradelab:tradelab_dev_password@db:5432/tradelab
+      MIGRATIONS_DIR: /app/migrations
+      INGESTION_INTERVAL_SECONDS: ${INGESTION_INTERVAL_SECONDS:-1800}
+      LOG_LEVEL: INFO
+      SEC_USER_AGENT: ${SEC_USER_AGENT:-}
+      X_BEARER_TOKEN: ${X_BEARER_TOKEN:-}
+      X_INGESTION_ENABLED: ${X_INGESTION_ENABLED:-false}
+      X_SEARCH_QUERY: ${X_SEARCH_QUERY:-}
+      X_MAX_RESULTS: ${X_MAX_RESULTS:-10}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      YOUTUBE_SEARCH_QUERY: ${YOUTUBE_SEARCH_QUERY:-}
+      INSTAGRAM_ACCESS_TOKEN: ${INSTAGRAM_ACCESS_TOKEN:-}
+      INSTAGRAM_USER_ID: ${INSTAGRAM_USER_ID:-}
+      INSTAGRAM_GRAPH_API_VERSION: ${INSTAGRAM_GRAPH_API_VERSION:-v24.0}
+      INSTAGRAM_HASHTAGS: ${INSTAGRAM_HASHTAGS:-stocks,investing,earnings,finance,technology}
+      GOOGLE_NEWS_QUERY: ${GOOGLE_NEWS_QUERY:-}
+      GOOGLE_NEWS_LOCALE: ${GOOGLE_NEWS_LOCALE:-US:en}
+      WORLD_BANK_COUNTRIES: ${WORLD_BANK_COUNTRIES:-WLD;USA;CHN;EUU;POL;JPN;DEU;GBR;IND;BRA}
+    volumes:
+      - ./apps/backend:/app
+      - ./database/migrations:/app/migrations:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tradelab
+      POSTGRES_USER: tradelab
+      POSTGRES_PASSWORD: tradelab_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tradelab -d tradelab"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:
+  web_node_modules:
